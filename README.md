@@ -1,5 +1,7 @@
 # context
 
+![context](context.png)
+
 `context` is a small command-line tool and Rust library that builds a structured, machine-readable index of a code repository.
 
 It is designed to be run inside a repository and to produce a stable representation of what exists in the codebase and how it connects.
@@ -66,14 +68,6 @@ On first run, this creates:
 
 On subsequent runs, existing metadata is reused when possible.
 
-## Command-line interface
-
-`context` follows standard CLI conventions:
-
-```bash
-context --help
-context --version
-```
 
 ## What is indexed
 
@@ -127,18 +121,6 @@ On each invocation it:
 
 This keeps runs predictable and relatively fast.
 
-## Library usage
-
-The indexing logic is also available as a Rust library:
-
-```rust
-use context::load_or_build;
-
-let ctx = load_or_build(repo_root);
-```
-
-The command-line tool uses the same API internally.
-
 ## Intended use
 
 `context` is intended as infrastructure.
@@ -152,11 +134,6 @@ It is designed to be consumed by tools such as:
 
 It provides a structured view of a codebase without making assumptions about how that information is used.
 
-## Summary
 
-* `context` is a CLI tool
-* It can be run in any repository
-* It produces a deterministic semantic index
-* Other tools consume that index
-
-For tools that need structured access to a codebase without repeatedly scanning it, `context` is meant to be a starting point.
+## License
+[MIT License](LICENSE).
