@@ -10,14 +10,22 @@ use tree_sitter_python as python;
 use tree_sitter_rust as rust;
 
 use blake3::Hasher;
-
-/* ======================= CONFIG ======================= */
+use clap::{Parser as ClapParser, CommandFactory};
 
 const CONTEXT_DIR: &str = ".context";
 const CONTEXT_FILE: &str = "context.json";
 const META_FILE: &str = "meta.json";
 
-/* ======================= DATA MODEL ======================= */
+#[derive(ClapParser)]
+#[command(
+    name = "context",
+    version,
+    about = "Generate a semantic context index for the current repository"
+)]
+struct Cli {
+    #[arg(long, help = "Root directory (defaults to current directory)")]
+    root: Option<PathBuf>,
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct RepoStats {
@@ -39,18 +47,14 @@ pub struct Symbol {
     pub kind: String,
     pub name: String,
     pub file: String,
-
     pub inputs: Vec<String>,
     pub input_types: Vec<String>,
     pub output: String,
-
     pub calls: Vec<String>,
     pub custom_calls: Vec<String>,
     pub lang_calls: Vec<String>,
     pub called_by: Vec<String>,
-
     pub doc: Option<String>,
-
     pub line_start: usize,
     pub line_end: usize,
 }
@@ -68,7 +72,11 @@ struct Meta {
     file_hashes: HashMap<String, String>,
 }
 
-/* ======================= PUBLIC ENTRY ======================= */
+fn main() {
+    let cli = Cli::parse();
+    let root = cli.root.unwrap_or_else(|| std::env::current_dir().unwrap());
+    load_or_build(&root);
+}
 
 pub fn load_or_build(root: impl AsRef<Path>) -> Context {
     let root = root.as_ref();
@@ -93,13 +101,8 @@ pub fn load_or_build(root: impl AsRef<Path>) -> Context {
                     &meta.file_hashes,
                     &current_hashes,
                 );
-
-                fs::write(
-                    &ctx_path,
-                    serde_json::to_string_pretty(&ctx).unwrap(),
-                )
-                .unwrap();
-
+                fs::create_dir_all(&ctx_dir).ok();
+                fs::write(&ctx_path, serde_json::to_string_pretty(&ctx).unwrap()).unwrap();
                 fs::write(
                     &meta_path,
                     serde_json::to_string_pretty(&Meta {
@@ -109,14 +112,12 @@ pub fn load_or_build(root: impl AsRef<Path>) -> Context {
                     .unwrap(),
                 )
                 .unwrap();
-
                 return ctx;
             }
         }
     }
 
     let ctx = build_context(root, current_stats.clone(), &current_hashes);
-
     fs::create_dir_all(&ctx_dir).ok();
     fs::write(&ctx_path, serde_json::to_string_pretty(&ctx).unwrap()).unwrap();
     fs::write(
@@ -128,11 +129,8 @@ pub fn load_or_build(root: impl AsRef<Path>) -> Context {
         .unwrap(),
     )
     .unwrap();
-
     ctx
 }
-
-/* ======================= IGNORE RULES ======================= */
 
 fn should_ignore(path: &Path) -> bool {
     path.components().any(|c| {
@@ -164,8 +162,6 @@ fn detect_language(path: &Path) -> Option<&'static str> {
     }
 }
 
-/* ======================= HASHING ======================= */
-
 fn hash_file(path: &Path) -> Option<String> {
     let data = fs::read(path).ok()?;
     let mut h = Hasher::new();
@@ -175,7 +171,6 @@ fn hash_file(path: &Path) -> Option<String> {
 
 fn compute_file_hashes(root: &Path) -> HashMap<String, String> {
     let mut out = HashMap::new();
-
     for e in WalkDir::new(root).into_iter().filter_map(Result::ok) {
         let p = e.path();
         if !e.file_type().is_file() || should_ignore(p) {
@@ -188,11 +183,8 @@ fn compute_file_hashes(root: &Path) -> HashMap<String, String> {
             out.insert(p.display().to_string(), h);
         }
     }
-
     out
 }
-
-/* ======================= STATS ======================= */
 
 fn compute_repo_stats(root: &Path) -> RepoStats {
     let mut stats = RepoStats {
@@ -200,12 +192,10 @@ fn compute_repo_stats(root: &Path) -> RepoStats {
         total_bytes: 0,
         total_lines: 0,
     };
-
     for e in WalkDir::new(root).into_iter().filter_map(Result::ok) {
         if !e.file_type().is_file() || should_ignore(e.path()) {
             continue;
         }
-
         if detect_language(e.path()).is_some() {
             if let Ok(meta) = e.metadata() {
                 stats.file_count += 1;
@@ -216,11 +206,8 @@ fn compute_repo_stats(root: &Path) -> RepoStats {
             }
         }
     }
-
     stats
 }
-
-/* ======================= INCREMENTAL ======================= */
 
 fn incremental_update(
     root: &Path,
@@ -242,7 +229,6 @@ fn incremental_update(
 
     ctx.symbols.retain(|s| !removed.contains(&s.file));
     ctx.files.retain(|f| !removed.contains(&f.path));
-
     ctx.symbols.retain(|s| !changed.contains(&s.file));
     ctx.files.retain(|f| !changed.contains(&f.path));
 
@@ -271,8 +257,6 @@ fn incremental_update(
     finalize_calls(&mut ctx.symbols);
 }
 
-/* ======================= CALL EXTRACTION ======================= */
-
 fn collect_calls(node: Node, src: &str, out: &mut HashSet<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -290,8 +274,6 @@ fn collect_calls(node: Node, src: &str, out: &mut HashSet<String>) {
         }
     }
 }
-
-/* ======================= DOCS ======================= */
 
 fn python_doc(node: Node, src: &str) -> Option<String> {
     let body = node.child_by_field_name("body")?;
@@ -326,8 +308,6 @@ fn rust_doc(node: Node, src: &str) -> Option<String> {
         Some(docs.join("\n"))
     }
 }
-
-/* ======================= BUILD ======================= */
 
 fn build_context(
     root: &Path,
@@ -367,8 +347,6 @@ fn build_context(
         symbols,
     }
 }
-
-/* ======================= PYTHON EXTRACTION ======================= */
 
 fn extract_python(src: &str, file: &str, out: &mut Vec<Symbol>) {
     let mut p = Parser::new();
@@ -471,8 +449,6 @@ fn extract_python_class(n: Node, src: &str, file: &str) -> Symbol {
     }
 }
 
-/* ======================= RUST EXTRACTION ======================= */
-
 fn extract_rust(src: &str, file: &str, out: &mut Vec<Symbol>) {
     let mut p = Parser::new();
     p.set_language(&rust::language()).ok();
@@ -535,8 +511,6 @@ fn extract_rust(src: &str, file: &str, out: &mut Vec<Symbol>) {
         });
     }
 }
-
-/* ======================= POST PROCESS ======================= */
 
 fn finalize_calls(symbols: &mut Vec<Symbol>) {
     let names: HashSet<String> = symbols.iter().map(|s| s.name.clone()).collect();
