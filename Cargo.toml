@@ -30,10 +30,6 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-[lib]
-name = "context"
-path = "src/lib.rs"
-
 [[bin]]
 name = "context"
 path = "src/main.rs"

@@ -1,81 +1,62 @@
-Here is the **final README**, updated to include **crates.io publishing** and a **one-line install script**, still sober and practical.
-
----
-
 # context
 
-`context` is a command-line tool and library that builds a structured semantic index of a code repository.
+`context` is a small command-line tool and Rust library that builds a structured, machine-readable index of a code repository.
 
-You run it inside a repo.
-It produces a machine-readable context that other tools and agents can rely on.
-
----
+It is designed to be run inside a repository and to produce a stable representation of what exists in the codebase and how it connects.
 
 ## Installation
 
-### From crates.io (recommended)
+### From crates.io
 
-If you have Rust installed:
+If Rust is already installed:
 
 ```bash
 cargo install context
-```
+````
 
-This installs the `context` binary globally.
-
-Verify installation:
+Verify the installation:
 
 ```bash
 context --version
 ```
 
----
+### Install via script
 
-### Install via script (no Cargo knowledge required)
-
-For users who don’t want to think about Rust internals:
+For environments where Cargo is not already set up:
 
 ```bash
-curl -fsSL https://context.sh/install | sh
+curl -fsSL https://raw.githubusercontent.com/kaushal07wick/context/master/install.sh | sh
 ```
 
-This script:
+The script downloads a prebuilt binary and installs it into a standard location.
+It prints guidance if the install directory is not on your `PATH`.
 
-* Installs Rust if missing
-* Builds `context`
-* Places the binary in `$HOME/.local/bin`
-* Prints next steps if the path is not on `$PATH`
-
-(You can inspect the script before running it.)
-
----
+The script is intentionally simple and can be reviewed before running.
 
 ### Build from source
 
 ```bash
-git clone https://github.com/<org>/context.git
+git clone https://github.com/kaushal07wick/context.git
 cd context
 cargo build --release
 ```
 
-Binary location:
+The compiled binary will be located at:
 
 ```bash
 ./target/release/context
 ```
 
----
+## Usage
 
-## Running
-
-Navigate to any repository you want to index:
+Change into any repository you want to index:
 
 ```bash
 cd path/to/repo
 context
 ```
 
-On first run, this generates:
+On first run, this creates:
 
 ```
 .context/
@@ -83,62 +64,46 @@ On first run, this generates:
   └─ meta.json
 ```
 
-Subsequent runs reuse the existing context if the repository has not changed.
-
----
+On subsequent runs, existing metadata is reused when possible.
 
 ## Command-line interface
 
-`context` behaves like a standard Unix CLI tool.
+`context` follows standard CLI conventions:
 
 ```bash
 context --help
 context --version
 ```
 
-Example:
-
-```bash
-context --help
-```
-
-Prints usage and available options.
-
-```bash
-context --version
-```
-
-Prints the installed version.
-
----
-
-## What gets indexed
+## What is indexed
 
 ### Files
 
+For each supported source file:
+
 * Path
 * Language
-* Size (bytes)
+* Size in bytes
 * Line count
 
 ### Symbols
 
-* Kind (`function`, `class`)
+For each discovered symbol:
+
+* Kind (for example, `function` or `class`)
 * Name
 * Source file
-* Parameters and parameter types (when available)
-* Return type (when available)
-* Docstring / doc comment
+* Parameters and parameter types, when available
+* Return type, when available
+* Docstring or documentation comments
 * Source line range
 
 ### Relationships
 
-* Calls made by the symbol
-* Calls to symbols defined in this repository
-* Calls to language builtins, standard library, and external packages
-* Reverse call graph (`called_by`)
-
----
+* Calls made by each symbol
+* Calls to symbols defined within the same repository
+* Calls to language builtins, standard libraries, or external packages
+* Reverse call relationships (`called_by`)
 
 ## Supported languages
 
@@ -147,28 +112,24 @@ Currently supported:
 * Python
 * Rust
 
-Each language is indexed using language-specific syntax and semantics.
-
----
+Each language is indexed using its own syntax and structural rules.
 
 ## Incremental behavior
 
 `context` is safe to run repeatedly.
 
-On each invocation:
+On each invocation it:
 
-1. Repository statistics are recomputed
-2. Compared against stored metadata
-3. If unchanged, the existing context is reused
-4. If changed, the context is rebuilt
+1. Recomputes repository statistics
+2. Compares them against stored metadata
+3. Reuses existing context when unchanged
+4. Reindexes only what has changed when necessary
 
-This keeps indexing fast and deterministic.
-
----
+This keeps runs predictable and relatively fast.
 
 ## Library usage
 
-`context` can also be used as a Rust library:
+The indexing logic is also available as a Rust library:
 
 ```rust
 use context::load_or_build;
@@ -176,45 +137,26 @@ use context::load_or_build;
 let ctx = load_or_build(repo_root);
 ```
 
-The CLI uses the same API internally.
-
----
+The command-line tool uses the same API internally.
 
 ## Intended use
 
-`context` is infrastructure.
+`context` is intended as infrastructure.
 
-It is meant to be consumed by:
+It is designed to be consumed by tools such as:
 
 * Code-aware agents
-* Refactoring and editing tools
-* Debuggers and reviewers
-* IDEs and editor integrations
-* Automated code analysis systems
+* Refactoring and editing systems
+* Review and analysis tools
+* Editor and IDE integrations
 
-It provides **what exists and how it connects**, nothing more.
-
----
-
-## Non-goals
-
-`context` intentionally does **not**:
-
-* Execute code
-* Perform full type checking
-* Infer runtime behavior
-* Modify source files
-* Generate explanations
-
-Those belong to higher layers built on top of it.
-
----
+It provides a structured view of a codebase without making assumptions about how that information is used.
 
 ## Summary
 
 * `context` is a CLI tool
-* Anyone can `context` a repository
+* It can be run in any repository
 * It produces a deterministic semantic index
 * Other tools consume that index
 
-If a tool needs structured access to a codebase without scanning everything, it should start with `context`.
+For tools that need structured access to a codebase without repeatedly scanning it, `context` is meant to be a starting point.

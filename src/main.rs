@@ -10,7 +10,7 @@ use tree_sitter_python as python;
 use tree_sitter_rust as rust;
 
 use blake3::Hasher;
-use clap::{Parser as ClapParser, CommandFactory};
+use clap::{Parser as ClapParser};
 
 const CONTEXT_DIR: &str = ".context";
 const CONTEXT_FILE: &str = "context.json";
@@ -75,8 +75,13 @@ struct Meta {
 fn main() {
     let cli = Cli::parse();
     let root = cli.root.unwrap_or_else(|| std::env::current_dir().unwrap());
-    load_or_build(&root);
+
+    let ctx = load_or_build(&root);
+
+    print_header();
+    print_summary(&root, &ctx);
 }
+
 
 pub fn load_or_build(root: impl AsRef<Path>) -> Context {
     let root = root.as_ref();
@@ -210,7 +215,7 @@ fn compute_repo_stats(root: &Path) -> RepoStats {
 }
 
 fn incremental_update(
-    root: &Path,
+    _root: &Path,
     ctx: &mut Context,
     old: &HashMap<String, String>,
     new: &HashMap<String, String>,
@@ -310,7 +315,7 @@ fn rust_doc(node: Node, src: &str) -> Option<String> {
 }
 
 fn build_context(
-    root: &Path,
+    _root: &Path,
     stats: RepoStats,
     hashes: &HashMap<String, String>,
 ) -> Context {
@@ -537,4 +542,166 @@ fn finalize_calls(symbols: &mut Vec<Symbol>) {
             s.called_by = callers;
         }
     }
+}
+
+fn print_header() {
+    let title = "context";
+    let width = 72;
+    let pad = (width - title.len()) / 2;
+
+    println!();
+    println!("{}", "═".repeat(width));
+    println!(
+        "{}{}{}",
+        " ".repeat(pad),
+        title,
+        " ".repeat(width - pad - title.len())
+    );
+    println!("{}", "═".repeat(width));
+}
+fn detect_test_frameworks(_root: &Path, files: &[FileInfo]) -> Vec<String> {
+    let mut frameworks: HashSet<String> = HashSet::new();
+
+    for f in files {
+        let path = Path::new(&f.path);
+
+        let is_test = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with("test_") || n.ends_with("_test.rs"))
+            .unwrap_or(false)
+            || path.components().any(|c| c.as_os_str() == "tests");
+
+        if !is_test {
+            continue;
+        }
+
+        let Ok(src) = fs::read_to_string(path) else { continue };
+
+        match f.language.as_str() {
+            "python" => {
+                if src.contains("import pytest") || src.contains("from pytest") {
+                    frameworks.insert("pytest".to_string());
+                }
+                if src.contains("import unittest") || src.contains("from unittest") {
+                    frameworks.insert("unittest".to_string());
+                }
+            }
+
+            "rust" => {
+                if src.contains("#[test]") {
+                    frameworks.insert("rust-test".to_string());
+                }
+                if src.contains("rstest::") {
+                    frameworks.insert("rstest".to_string());
+                }
+                if src.contains("proptest::") {
+                    frameworks.insert("proptest".to_string());
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    let mut out: Vec<String> = frameworks.into_iter().collect();
+    out.sort();
+    out
+}
+
+fn print_summary(root: &Path, ctx: &Context) {
+    let ctx_dir = root.join(CONTEXT_DIR);
+    let ctx_path = ctx_dir.join(CONTEXT_FILE);
+
+    let ctx_bytes = fs::metadata(&ctx_path).map(|m| m.len()).unwrap_or(0);
+
+    let mut lang_counts: HashMap<&str, usize> = HashMap::new();
+    for f in &ctx.files {
+        *lang_counts.entry(f.language.as_str()).or_default() += 1;
+    }
+
+    let languages = if lang_counts.is_empty() {
+        "unknown".to_string()
+    } else {
+        lang_counts.keys().cloned().collect::<Vec<_>>().join(", ")
+    };
+
+    let width = 72;
+    let hr = |c| std::iter::repeat(c).take(width).collect::<String>();
+
+    println!("┌{}┐", hr('─'));
+    println!(
+        "│ {:<22} {:<47} │",
+        "Indexed path",
+        root.display()
+    );
+    println!(
+        "│ {:<22} {:<47} │",
+        "Context output",
+        ctx_path.display()
+    );
+    println!(
+        "│ {:<22} {:<47} │",
+        "Languages",
+        languages
+    );
+    let frameworks = detect_test_frameworks(root, &ctx.files);
+    let framework_str = if frameworks.is_empty() {
+        "none detected".to_string()
+    } else {
+        frameworks.join(", ")
+    };
+
+    println!(
+        "│ {:<22} {:<47} │",
+        "Test framework",
+        framework_str
+    );
+
+    println!("├{}┤", hr('─'));
+
+    println!(
+        "│ {:<22} {:>47} │",
+        "Files indexed",
+        ctx.stats.file_count
+    );
+    println!(
+        "│ {:<22} {:>47} │",
+        "Files hashed",
+        ctx.files.len()
+    );
+    println!(
+        "│ {:<22} {:>47} │",
+        "Symbols",
+        ctx.symbols.len()
+    );
+    println!(
+        "│ {:<22} {:>47} │",
+        "Total lines",
+        ctx.stats.total_lines
+    );
+    println!(
+        "│ {:<22} {:>47} │",
+        "Repository bytes",
+        ctx.stats.total_bytes
+    );
+    println!(
+        "│ {:<22} {:>47} │",
+        "context.json size",
+        ctx_bytes
+    );
+
+    if !lang_counts.is_empty() {
+        println!("├{}┤", hr('─'));
+        for (lang, count) in lang_counts {
+            println!(
+                "│ {:<22} {:>47} │",
+                format!("{} files", lang),
+                count
+            );
+        }
+    }
+
+    println!("└{}┘", hr('─'));
+    println!();
 }
